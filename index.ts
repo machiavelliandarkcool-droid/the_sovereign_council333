@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import axios from 'axios';
+import { URL } from 'url';
 
 dotenv.config();
 
@@ -27,11 +28,20 @@ const formatURI = (uri: string) => {
     return uri;
 };
 
+// ⚡️ WORLD-CLASS FIX 1: Whitelist ป้องกัน SSRF
+const ALLOWED_HOSTS = ['gateway.irys.xyz', 'arweave.net', 'ipfs.io'];
+const isSafeUrl = (targetUrl: string) => {
+    try {
+        const parsedUrl = new URL(targetUrl);
+        return ALLOWED_HOSTS.some(host => parsedUrl.hostname.includes(host));
+    } catch (e) {
+        return false;
+    }
+};
+
 app.get('/metadata/:tokenId', async (req, res) => {
-    // 🟢 บังคับ OpenSea ห้ามจำแคช (No-Cache) เพื่อให้อัปเดตภาพและวิดีโอทันที
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    // ⚡️ WORLD-CLASS FIX 2: ใช้ Cache 60 วินาทีเพื่อลดภาระ RPC แต่ข้อมูลยังสดใหม่
+    res.setHeader('Cache-Control', 'public, max-age=60');
 
     const tokenId = req.params.tokenId;
 
@@ -47,7 +57,7 @@ app.get('/metadata/:tokenId', async (req, res) => {
             description: "The Absolute Proof of True Ownership & Identity. The Machiavellian Dark Cool.",
             image: formatURI(data.front), 
             attributes: [
-                { trait_type: "Sovereign Owner", value: data.owner } // 🟢 ดึง Address สดจาก Blockchain
+                { trait_type: "Sovereign Owner", value: data.owner }
             ]
         };
 
@@ -63,14 +73,23 @@ app.get('/metadata/:tokenId', async (req, res) => {
             const hiddenUrl = formatURI(data.hidden);
             
             if (hiddenUrl.startsWith("http")) {
-                try {
-                    const response = await axios.get(hiddenUrl);
-                    const extraData = response.data;
+                // ⚡️ WORLD-CLASS FIX 3: ตรวจสอบ Domain ก่อนทำงาน (SSRF Prevention)
+                if (isSafeUrl(hiddenUrl)) {
+                    try {
+                        const response = await axios.get(hiddenUrl, {
+                            timeout: 5000, // ตัดการเชื่อมต่อทันทีหากนานเกิน 5 วินาที
+                            maxContentLength: 1000000 // ล็อคขนาดไฟล์สูงสุด 1MB ป้องกัน RAM ถล่ม
+                        });
+                        const extraData = response.data;
 
-                    if (extraData && extraData.attributes && Array.isArray(extraData.attributes)) {
-                        metadata.attributes.push(...extraData.attributes);
+                        if (extraData && extraData.attributes && Array.isArray(extraData.attributes)) {
+                            metadata.attributes.push(...extraData.attributes);
+                        }
+                    } catch (err) {
+                        metadata.attributes.push({ trait_type: "Hidden Property (Chrono-Map)", value: hiddenUrl });
                     }
-                } catch (err) {
+                } else {
+                    // หากไม่อยู่ใน Whitelist ให้แปลงเป็น Text ธรรมดา
                     metadata.attributes.push({ trait_type: "Hidden Property (Chrono-Map)", value: hiddenUrl });
                 }
             } else {
@@ -95,4 +114,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`[SYSTEM] ♠️ สัญญาณเชื่อมต่อพร้อมรบที่พอร์ต ${PORT}`);
 });
-
