@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(cors());
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const contractAddress = process.env.CONTRACT_ADDRESS; // นำเครื่องหมาย ! ออก
+const contractAddress = process.env.CONTRACT_ADDRESS!;
 
 // ABI ดึงข้อมูลครบ 8 ค่าตาม Smart Contract
 const abi = [
@@ -21,8 +21,7 @@ const abi = [
 
 const contract = new ethers.Contract(contractAddress, abi, provider);
 
-// ลบ Type ": string" ออก
-const formatURI = (uri) => {
+const formatURI = (uri: string) => {
     if (!uri) return "";
     if (uri.startsWith("ar://")) return uri.replace("ar://", "https://arweave.net/");
     if (uri.startsWith("ipfs://")) return uri.replace("ipfs://", "https://ipfs.io/ipfs/");
@@ -31,8 +30,7 @@ const formatURI = (uri) => {
 
 // ⚡️ WORLD-CLASS FIX 1: Whitelist ป้องกัน SSRF
 const ALLOWED_HOSTS = ['gateway.irys.xyz', 'arweave.net', 'ipfs.io'];
-// ลบ Type ": string" ออก
-const isSafeUrl = (targetUrl) => {
+const isSafeUrl = (targetUrl: string) => {
     try {
         const parsedUrl = new URL(targetUrl);
         return ALLOWED_HOSTS.some(host => parsedUrl.hostname.includes(host));
@@ -52,12 +50,8 @@ app.get('/metadata/:tokenId', async (req, res) => {
     try {
         const data = await contract.getDeedData(tokenId);
         
-        if (data.owner === ethers.ZeroAddress) {
-            return res.status(404).json({ error: "โฉนดใบนี้ยังไม่ถูกสร้างเข้าระบบสิทธิ์ขาด" });
-        }
-
-        // ลบ Type ": Record<string, any>" ออก
-        const metadata = {
+        // หากข้าม Revert มาได้ แสดงว่ามีเจ้าของแน่นอน
+        const metadata: Record<string, any> = {
             name: `Imperial Sovereign Deed #${tokenId}`,
             description: "The Absolute Proof of True Ownership & Identity. The Machiavellian Dark Cool.",
             image: formatURI(data.front), 
@@ -104,8 +98,13 @@ app.get('/metadata/:tokenId', async (req, res) => {
         res.json(metadata);
         console.log(`[SYSTEM SUCCESS] ดึงข้อมูลสดของโฉนดเบอร์ ${tokenId} สู่แพลตฟอร์มเรียบร้อย`);
 
-    } catch (error) {
-        console.error(`[ORACLE ERROR] เบอร์ ${tokenId} การเชื่อมต่อขัดข้อง:`, error);
+    } catch (error: any) {
+        // [FIX APPLIED]: ดักจับ Revert จาก Smart Contract กรณีโฉนดยังไม่เกิด
+        if (error.message && (error.message.includes("NonexistentToken") || error.message.includes("revert"))) {
+            return res.status(404).json({ error: "โฉนดใบนี้ยังไม่ถูกสร้างเข้าระบบสิทธิ์ขาด หรือถูกยุบไปแล้ว" });
+        }
+        
+        console.error(`[ORACLE ERROR] เบอร์ ${tokenId} การเชื่อมต่อขัดข้อง:`, error.message || error);
         res.status(500).json({ error: "Network Connection Error" });
     }
 });
