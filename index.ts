@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(cors());
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const contractAddress = process.env.CONTRACT_ADDRESS!;
+const contractAddress = process.env.CONTRACT_ADDRESS; // นำเครื่องหมาย ! ออก
 
 // ABI ดึงข้อมูลครบ 8 ค่าตาม Smart Contract
 const abi = [
@@ -21,7 +21,8 @@ const abi = [
 
 const contract = new ethers.Contract(contractAddress, abi, provider);
 
-const formatURI = (uri: string) => {
+// ลบ Type ": string" ออก
+const formatURI = (uri) => {
     if (!uri) return "";
     if (uri.startsWith("ar://")) return uri.replace("ar://", "https://arweave.net/");
     if (uri.startsWith("ipfs://")) return uri.replace("ipfs://", "https://ipfs.io/ipfs/");
@@ -30,7 +31,8 @@ const formatURI = (uri: string) => {
 
 // ⚡️ WORLD-CLASS FIX 1: Whitelist ป้องกัน SSRF
 const ALLOWED_HOSTS = ['gateway.irys.xyz', 'arweave.net', 'ipfs.io'];
-const isSafeUrl = (targetUrl: string) => {
+// ลบ Type ": string" ออก
+const isSafeUrl = (targetUrl) => {
     try {
         const parsedUrl = new URL(targetUrl);
         return ALLOWED_HOSTS.some(host => parsedUrl.hostname.includes(host));
@@ -43,7 +45,9 @@ app.get('/metadata/:tokenId', async (req, res) => {
     // ⚡️ WORLD-CLASS FIX 2: ใช้ Cache 60 วินาทีเพื่อลดภาระ RPC แต่ข้อมูลยังสดใหม่
     res.setHeader('Cache-Control', 'public, max-age=60');
 
-    const tokenId = req.params.tokenId;
+    // 🔴 [CRITICAL FIX]: ล็อคเป้าตัดสัญชาตญาณ OpenSea ที่ชอบแถม .json เข้ามา
+    const tokenIdRaw = req.params.tokenId;
+    const tokenId = tokenIdRaw.replace('.json', ''); 
 
     try {
         const data = await contract.getDeedData(tokenId);
@@ -52,7 +56,8 @@ app.get('/metadata/:tokenId', async (req, res) => {
             return res.status(404).json({ error: "โฉนดใบนี้ยังไม่ถูกสร้างเข้าระบบสิทธิ์ขาด" });
         }
 
-        const metadata: Record<string, any> = {
+        // ลบ Type ": Record<string, any>" ออก
+        const metadata = {
             name: `Imperial Sovereign Deed #${tokenId}`,
             description: "The Absolute Proof of True Ownership & Identity. The Machiavellian Dark Cool.",
             image: formatURI(data.front), 
@@ -77,8 +82,8 @@ app.get('/metadata/:tokenId', async (req, res) => {
                 if (isSafeUrl(hiddenUrl)) {
                     try {
                         const response = await axios.get(hiddenUrl, {
-                            timeout: 5000, // ตัดการเชื่อมต่อทันทีหากนานเกิน 5 วินาที
-                            maxContentLength: 1000000 // ล็อคขนาดไฟล์สูงสุด 1MB ป้องกัน RAM ถล่ม
+                            timeout: 5000, 
+                            maxContentLength: 1000000 
                         });
                         const extraData = response.data;
 
@@ -89,7 +94,6 @@ app.get('/metadata/:tokenId', async (req, res) => {
                         metadata.attributes.push({ trait_type: "Hidden Property (Chrono-Map)", value: hiddenUrl });
                     }
                 } else {
-                    // หากไม่อยู่ใน Whitelist ให้แปลงเป็น Text ธรรมดา
                     metadata.attributes.push({ trait_type: "Hidden Property (Chrono-Map)", value: hiddenUrl });
                 }
             } else {
